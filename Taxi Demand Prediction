@@ -1,0 +1,446 @@
+import mindspore.nn as nn
+from mindspore.nn import LSTM
+from mindspore.common.initializer import Normal
+from mindspore.ops import operations as P
+
+class C2(nn.Cell):
+    def __init__(self, config):
+        super(C2, self).__init__()
+
+        # Define LSTM layers
+        self.lstm_global = LSTM(input_size=config.input_size, hidden_size=config.hidden_size,num_layers=config.lstm_layers, has_bias=True, bidirectional=False)
+        self.lstm_r = LSTM(input_size=config.input_size, hidden_size=config.hidden_size,num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_b = LSTM(input_size=config.input_size, hidden_size=config.hidden_size,num_layers=4, has_bias=True, bidirectional=False)
+        # Define linear layers
+        self.linear_global = nn.Dense(in_channels=config.hidden_size, out_channels=config.output_size, weight_init=Normal(0.02))
+        self.linear_r = nn.Dense(in_channels=config.hidden_size, out_channels=config.output_size, weight_init=Normal(0.02))
+        self.linear_b = nn.Dense(in_channels=config.hidden_size, out_channels=config.output_size, weight_init=Normal(0.02))
+        # Define operations
+        self.transpose = P.Transpose()
+        self.squeeze = P.Squeeze(axis=0)
+
+    def construct(self, X_global, X_r, X_b, hidden_global=None, hidden_r=None, hidden_b=None):
+        # LSTM forward pass
+        global_out, _, _ = self.lstm_global(X_global, hidden_global)
+        global_out = self.squeeze(global_out)
+        linear_out_global = self.linear_global(global_out)
+        r_out, _, _ = self.lstm_r(X_r, hidden_r)
+        r_out = self.squeeze(r_out)
+        linear_out_r = self.linear_r(r_out)
+        b_out, _, _ = self.lstm_b(X_b, hidden_b)
+        b_out = self.squeeze(b_out)
+        linear_out_b = self.linear_b(b_out)
+        return linear_out_global, linear_out_r, linear_out_b
+
+class C3(nn.Cell):
+
+    def __init__(self, config):
+        super(C3, self).__init__()
+        self.lstm_global = LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                num_layers=config.lstm_layers, batch_first=True, dropout=config.dropout_rate)
+
+        self.lstm_r = LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                           num_layers=4, batch_first=True, dropout=config.dropout_rate)
+
+        self.lstm_b = LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                           num_layers=4, batch_first=True, dropout=config.dropout_rate)
+
+        self.lstm_g = LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                           num_layers=4, batch_first=True, dropout=config.dropout_rate)
+
+        self.linear_global = nn.Dense(in_features=config.hidden_size, out_features=config.output_size)
+        self.linear_r = nn.Dense(in_features=config.hidden_size, out_features=config.output_size)
+        self.linear_b = nn.Dense(in_features=config.hidden_size, out_features=config.output_size)
+        self.linear_g = nn.Dense(in_features=config.hidden_size, out_features=config.output_size)
+
+
+    def forward(self, X_global, X_r, X_b, X_g, hidden_global=None, hidden_r=None, hidden_b=None, hidden_g=None):
+        global_out, hidden_global = self.lstm_global(X_global, hidden_global)
+        linear_out_global = self.linear_global(global_out)
+
+        r_out, hidden_r = self.lstm_r(X_r, hidden_r)
+        linear_out_r = self.linear_r(r_out)
+
+        b_out, hidden_b = self.lstm_b(X_b, hidden_b)
+        linear_out_b = self.linear_b(b_out)
+
+        g_out, hidden_g = self.lstm_g(X_g, hidden_g)
+        linear_out_g = self.linear_g(g_out)
+        return linear_out_global, linear_out_r, linear_out_b, linear_out_g, hidden_global, hidden_r, hidden_b, hidden_g
+
+
+class C4(nn.Cell):
+    def __init__(self, config):
+        super(C4, self).__init__()
+        self.lstm_global = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                    num_layers=config.lstm_layers, has_bias=True, bidirectional=False)
+        self.lstm_r = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_b = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_g = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_p = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                num_layers=4, has_bias=True, bidirectional=False)
+
+        self.linear_global = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_r = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_b = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_g = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_p = nn.Dense(config.hidden_size, config.output_size)
+
+    def construct(self, X_global, X_r, X_b, X_g, X_p, hidden_global=None, hidden_r=None, hidden_b=None, hidden_g=None, hidden_p=None):
+        global_out, _ = self.lstm_global(X_global, hidden_global)
+        linear_out_global = self.linear_global(global_out[:, -1, :])
+
+        r_out, _ = self.lstm_r(X_r, hidden_r)
+        linear_out_r = self.linear_r(r_out[:, -1, :])
+
+        b_out, _ = self.lstm_b(X_b, hidden_b)
+        linear_out_b = self.linear_b(b_out[:, -1, :])
+
+        g_out, _ = self.lstm_g(X_g, hidden_g)
+        linear_out_g = self.linear_g(g_out[:, -1, :])
+
+        p_out, _ = self.lstm_p(X_p, hidden_p)
+        linear_out_p = self.linear_p(p_out[:, -1, :])
+
+        return linear_out_global, linear_out_r, linear_out_b, linear_out_g, linear_out_p
+
+class C5(nn.Cell):
+    def __init__(self, config):
+        super(C5, self).__init__()
+        self.lstm_global = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                    num_layers=config.lstm_layers, has_bias=True, bidirectional=False)
+        self.lstm_r = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_b = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_g = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_p = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                num_layers=4, has_bias=True, bidirectional=False)
+
+        self.linear_global = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_r = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_b = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_g = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_p = nn.Dense(config.hidden_size, config.output_size)
+
+
+class C6(nn.Cell):
+    def __init__(self, config):
+        super(C6, self).__init__()
+        self.lstm_global = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                    num_layers=config.lstm_layers, has_bias=True, bidirectional=False)
+        self.lstm_r = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_b = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_g = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_p = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_h = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_f = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+
+        self.linear_global = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_r = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_b = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_g = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_p = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_h = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_f = nn.Dense(config.hidden_size, config.output_size)
+
+    def construct(self, X_global, X_r, X_b, X_g, X_p, X_h, X_f,
+                  hidden_global=None, hidden_r=None, hidden_b=None, hidden_g=None, hidden_p=None, hidden_h=None, hidden_f=None):
+        global_out, _ = self.lstm_global(X_global, hidden_global)
+        linear_out_global = self.linear_global(global_out[:, -1, :])
+
+        r_out, _ = self.lstm_r(X_r, hidden_r)
+        linear_out_r = self.linear_r(r_out[:, -1, :])
+
+        b_out, _ = self.lstm_b(X_b, hidden_b)
+        linear_out_b = self.linear_b(b_out[:, -1, :])
+
+        g_out, _ = self.lstm_g(X_g, hidden_g)
+        linear_out_g = self.linear_g(g_out[:, -1, :])
+
+        p_out, _ = self.lstm_p(X_p, hidden_p)
+        linear_out_p = self.linear_p(p_out[:, -1, :])
+
+        h_out, _ = self.lstm_h(X_h, hidden_h)
+        linear_out_h = self.linear_h(h_out[:, -1, :])
+
+        f_out, _ = self.lstm_f(X_f, hidden_f)
+        linear_out_f = self.linear_f(f_out[:, -1, :])
+
+        return linear_out_global, linear_out_r, linear_out_b, linear_out_g, linear_out_p, linear_out_f, linear_out_h
+
+class C7(nn.Cell):
+    def __init__(self, config):
+        super(C7, self).__init__()
+        self.lstm_global = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                    num_layers=config.lstm_layers, has_bias=True, bidirectional=False)
+        self.lstm_r = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_b = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_g = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_p = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_h = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_f = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_k = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+
+        self.linear_global = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_r = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_b = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_g = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_p = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_h = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_f = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_k = nn.Dense(config.hidden_size, config.output_size)
+
+    def construct(self, X_global, X_r, X_b, X_g, X_p, X_h, X_f, X_k,
+                  hidden_global=None, hidden_r=None, hidden_b=None, hidden_g=None, hidden_p=None, hidden_h=None, hidden_f=None, hidden_k=None):
+        global_out, _ = self.lstm_global(X_global, hidden_global)
+        linear_out_global = self.linear_global(global_out[:, -1, :])
+
+        r_out, _ = self.lstm_r(X_r, hidden_r)
+        linear_out_r = self.linear_r(r_out[:, -1, :])
+
+        b_out, _ = self.lstm_b(X_b, hidden_b)
+        linear_out_b = self.linear_b(b_out[:, -1, :])
+
+        g_out, _ = self.lstm_g(X_g, hidden_g)
+        linear_out_g = self.linear_g(g_out[:, -1, :])
+
+        p_out, _ = self.lstm_p(X_p, hidden_p)
+        linear_out_p = self.linear_p(p_out[:, -1, :])
+
+        h_out, _ = self.lstm_h(X_h, hidden_h)
+        linear_out_h = self.linear_h(h_out[:, -1, :])
+
+        f_out, _ = self.lstm_f(X_f, hidden_f)
+        linear_out_f = self.linear_f(f_out[:, -1, :])
+
+        k_out, _ = self.lstm_k(X_k, hidden_k)
+        linear_out_k = self.linear_k(k_out[:, -1, :])
+
+        return linear_out_global, linear_out_r, linear_out_b, linear_out_g, linear_out_p, linear_out_f, linear_out_h, linear_out_k
+
+class C8(nn.Cell):
+    def __init__(self, config):
+        super(C8, self).__init__()
+        self.lstm_global = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                    num_layers=config.lstm_layers, has_bias=True, bidirectional=False)
+        self.lstm_r = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_b = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_g = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_p = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_h = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_f = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_k = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_l = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+
+        self.linear_global = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_r = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_b = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_g = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_p = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_h = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_f = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_k = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_l = nn.Dense(config.hidden_size, config.output_size)
+
+    def construct(self, X_global, X_r, X_b, X_g, X_p, X_h, X_f, X_k, X_l,
+                  hidden_global=None, hidden_r=None, hidden_b=None, hidden_g=None, hidden_p=None, hidden_h=None, hidden_f=None, hidden_k=None, hidden_l=None):
+        global_out, _ = self.lstm_global(X_global, hidden_global)
+        linear_out_global = self.linear_global(global_out[:, -1, :])
+
+        r_out, _ = self.lstm_r(X_r, hidden_r)
+        linear_out_r = self.linear_r(r_out[:, -1, :])
+
+        b_out, _ = self.lstm_b(X_b, hidden_b)
+        linear_out_b = self.linear_b(b_out[:, -1, :])
+
+        g_out, _ = self.lstm_g(X_g, hidden_g)
+        linear_out_g = self.linear_g(g_out[:, -1, :])
+
+        p_out, _ = self.lstm_p(X_p, hidden_p)
+        linear_out_p = self.linear_p(p_out[:, -1, :])
+
+        h_out, _ = self.lstm_h(X_h, hidden_h)
+        linear_out_h = self.linear_h(h_out[:, -1, :])
+
+        f_out, _ = self.lstm_f(X_f, hidden_f)
+        linear_out_f = self.linear_f(f_out[:, -1, :])
+
+        k_out, _ = self.lstm_k(X_k, hidden_k)
+        linear_out_k = self.linear_k(k_out[:, -1, :])
+
+        l_out, _ = self.lstm_l(X_l, hidden_l)
+        linear_out_l = self.linear_l(l_out[:, -1, :])
+
+        return linear_out_global, linear_out_r, linear_out_b, linear_out_g, linear_out_p, linear_out_f, linear_out_h, linear_out_k, linear_out_l
+
+
+class C9(nn.Cell):
+    def __init__(self, config):
+        super(C9, self).__init__()
+        self.lstm_global = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                    num_layers=config.lstm_layers, has_bias=True, bidirectional=False)
+        self.lstm_r = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_b = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_g = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_p = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_h = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_f = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_k = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_l = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_j = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+
+        self.linear_global = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_r = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_b = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_g = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_p = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_h = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_f = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_k = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_l = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_j = nn.Dense(config.hidden_size, config.output_size)
+
+    def construct(self, X_global, X_r, X_b, X_g, X_p, X_h, X_f, X_k, X_l, X_j,
+                  hidden_global=None, hidden_r=None, hidden_b=None, hidden_g=None, hidden_p=None, hidden_h=None, hidden_f=None, hidden_k=None, hidden_l=None, hidden_j=None):
+        global_out, _ = self.lstm_global(X_global, hidden_global)
+        linear_out_global = self.linear_global(global_out[:, -1, :])
+
+        r_out, _ = self.lstm_r(X_r, hidden_r)
+        linear_out_r = self.linear_r(r_out[:, -1, :])
+
+        b_out, _ = self.lstm_b(X_b, hidden_b)
+        linear_out_b = self.linear_b(b_out[:, -1, :])
+
+        g_out, _ = self.lstm_g(X_g, hidden_g)
+        linear_out_g = self.linear_g(g_out[:, -1, :])
+
+        p_out, _ = self.lstm_p(X_p, hidden_p)
+        linear_out_p = self.linear_g(p_out[:, -1, :])
+
+        h_out, _ = self.lstm_h(X_h, hidden_h)
+        linear_out_h = self.linear_h(h_out[:, -1, :])
+
+        f_out, _ = self.lstm_f(X_f, hidden_f)
+        linear_out_f = self.linear_f(f_out[:, -1, :])
+
+        k_out, _ = self.lstm_k(X_k, hidden_k)
+        linear_out_k = self.linear_f(k_out[:, -1, :])
+
+        l_out, _ = self.lstm_l(X_l, hidden_l)
+        linear_out_l = self.linear_l(l_out[:, -1, :])
+
+        j_out, _ = self.lstm_j(X_j, hidden_j)
+        linear_out_j = self.linear_l(j_out[:, -1, :])
+
+        return linear_out_global, linear_out_r, linear_out_b, linear_out_g, linear_out_p, linear_out_f, linear_out_h, linear_out_k, linear_out_l, linear_out_j
+
+
+class C10(nn.Cell):
+    def __init__(self, config):
+        super(C10, self).__init__()
+        self.lstm_global = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                                    num_layers=config.lstm_layers, has_bias=True, bidirectional=False)
+        self.lstm_r = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_b = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_g = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_p = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_h = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_f = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_k = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_l = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_j = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+        self.lstm_n = nn.LSTM(input_size=config.input_size, hidden_size=config.hidden_size,
+                              num_layers=4, has_bias=True, bidirectional=False)
+
+        self.linear_global = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_r = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_b = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_g = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_p = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_h = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_f = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_k = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_l = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_j = nn.Dense(config.hidden_size, config.output_size)
+        self.linear_n = nn.Dense(config.hidden_size, config.output_size)
+
+    def construct(self, X_global, X_r, X_b, X_g, X_p, X_h, X_f, X_k, X_l, X_j, X_n,
+                  hidden_global=None, hidden_r=None, hidden_b=None, hidden_g=None, hidden_p=None, hidden_h=None, hidden_f=None, hidden_k=None, hidden_l=None, hidden_j=None, hidden_n=None):
+        global_out, _ = self.lstm_global(X_global, hidden_global)
+        linear_out_global = self.linear_global(global_out[:, -1, :])
+
+        r_out, _ = self.lstm_r(X_r, hidden_r)
+        linear_out_r = self.linear_r(r_out[:, -1, :])
+
+        b_out, _ = self.lstm_b(X_b, hidden_b)
+        linear_out_b = self.linear_b(b_out[:, -1, :])
+
+        g_out, _ = self.lstm_g(X_g, hidden_g)
+        linear_out_g = self.linear_g(g_out[:, -1, :])
+
+        p_out, _ = self.lstm_p(X_p, hidden_p)
+        linear_out_p = self.linear_g(p_out[:, -1, :])
+
+        h_out, _ = self.lstm_h(X_h, hidden_h)
+        linear_out_h = self.linear_h(h_out[:, -1, :])
+
+        f_out, _ = self.lstm_f(X_f, hidden_f)
+        linear_out_f = self.linear_f(f_out[:, -1, :])
+
+        k_out, _ = self.lstm_k(X_k, hidden_k)
+        linear_out_k = self.linear_f(k_out[:, -1, :])
+
+        l_out, _ = self.lstm_l(X_l, hidden_l)
+        linear_out_l = self.linear_l(l_out[:, -1, :])
+
+        j_out, _ = self.lstm_j(X_j, hidden_j)
+        linear_out_j = self.linear_l(j_out[:, -1, :])
+
+        n_out, _ = self.lstm_n(X_n, hidden_n)
+        linear_out_n = self.linear_l(n_out[:, -1, :])
+
+        return linear_out_global, linear_out_r, linear_out_b, linear_out_g, linear_out_p, linear_out_f, linear_out_h, linear_out_k, linear_out_l, linear_out_j, linear_out_n
